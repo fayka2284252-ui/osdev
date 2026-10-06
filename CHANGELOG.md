@@ -38,3 +38,16 @@
 - QEMU raw-образ предупреждал о формате — явный `-drive format=raw,file=...`
 - Линкер: явный `-Wl,-e,kernel_main`, иначе `ld.lld` не находил точку входа
 - `_run` в `build.py` перехватывает stdout/stderr и вызывает `errors.print_hints`
+
+## [0.1.1] — 2026-10-06 19:26
+
+### Added
+
+- Trusted Publishing: релизы на GitHub автоматически публикуются на PyPI
+- `dist/` добавлен в `.gitignore`
+
+### Changed
+
+- Версия пакета: 0.1.0 → 0.1.1
+
+## [0.1.0] — 2026-10-06

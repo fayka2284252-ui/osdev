@@ -20,3 +20,6 @@ build/
 # Windows
 Thumbs.db
 desktop.ini
+
+# Сборки пакета
+dist/
