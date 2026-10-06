@@ -67,8 +67,17 @@ def elf_to_binary(elf_path: Path) -> bytes:
 
 def _run(cmd: list[str], cwd: Path) -> None:
     console.print(f"[dim]$ {' '.join(cmd)}[/dim]")
-    r = subprocess.run(cmd, cwd=cwd)
+    r = subprocess.run(
+        cmd, cwd=cwd,
+        capture_output=True, text=True, errors="replace",
+    )
+    if r.stdout:
+        console.print(r.stdout, end="")
+    if r.stderr:
+        console.print(r.stderr, end="", style="red")
     if r.returncode != 0:
+        from .errors import print_hints
+        print_hints((r.stdout or "") + "\n" + (r.stderr or ""))
         raise RuntimeError(f"Команда вернула код {r.returncode}")
 
 
