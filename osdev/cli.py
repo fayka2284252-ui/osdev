@@ -2,6 +2,8 @@
 import subprocess
 import shutil
 from pathlib import Path
+import os
+import tempfile
 
 import typer
 from rich.console import Console
@@ -106,6 +108,67 @@ def run(
         "-m", mem,
     ])
 
+@app.command()
+def debug(
+    mem: str = typer.Option("128M", "--mem", "-m", help="Объём RAM"),
+    no_build: bool = typer.Option(False, "--no-build", help="Не пересобирать"),
+    port: int = typer.Option(1234, "--port", help="Порт GDB-сервера QEMU"),
+) -> None:
+    """Собрать и запустить QEMU под GDB (пошаговая отладка ядра)."""
+    project_dir = Path.cwd()
+    cfg = load_config(project_dir)
+    name = cfg["project"]["name"]
+    output_rel = cfg["build"].get("output", f"build/{name}.img")
+    img = project_dir / output_rel
+    kernel_elf = project_dir / "build" / "kernel.elf"
+
+    if not no_build:
+        build_project(project_dir)
+
+    if not img.exists():
+        console.print(f"[red]Образ не найден:[/red] {img}")
+        raise typer.Exit(1)
+    if not kernel_elf.exists():
+        console.print(f"[red]kernel.elf не найден:[/red] {kernel_elf}")
+        raise typer.Exit(1)
+
+    qemu = find_tool("qemu-system-i386")
+    gdb = find_tool("gdb")
+
+    console.print(f"[green]QEMU[/green]: {qemu} (GDB :{port}, пауза)")
+    qemu_proc = subprocess.Popen([
+        qemu,
+        "-drive", f"format=raw,file={img}",
+        "-m", mem,
+        "-S",
+        "-gdb", f"tcp::{port}",
+    ])
+
+    # пишем команды GDB в файл — надёжнее, чем -ex на Windows
+    cmds = "\n".join([
+        f"target remote localhost:{port}",
+        f"symbol-file {kernel_elf.as_posix()}",
+        "break kernel_main",
+        "continue",
+    ]) + "\n"
+
+    fd, gdb_script = tempfile.mkstemp(suffix=".gdb")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(cmds)
+
+    try:
+        console.print(f"[green]GDB[/green]: {gdb}")
+        console.print("[dim]Команды: c (continue), si (step), b <symbol>, info registers, x/10i $pc, q (quit)[/dim]")
+        subprocess.run([gdb, "-x", gdb_script, str(kernel_elf)])
+    finally:
+        try:
+            os.unlink(gdb_script)
+        except OSError:
+            pass
+        if qemu_proc.poll() is None:
+            qemu_proc.terminate()
+            console.print("[dim]QEMU остановлен.[/dim]")
 
 if __name__ == "__main__":
     app()
+
