@@ -119,11 +119,19 @@ def build(project_dir: Path) -> Path:
         include_flags += ["-I", str(project_dir / inc)]
 
     kernel_o = build_dir / "kernel.o"
+    lang = project_cfg.get("lang", "c")
+    zig_frontend = "c++" if lang == "cpp" else "cc"
+
+    cxx_flags: list[str] = []
+    if lang == "cpp":
+        cxx_flags = ["-fno-exceptions", "-fno-rtti", "-std=c++20"]
+
     _run([
-        zig, "cc",
+        zig, zig_frontend,
         "-target", "x86-freestanding-none",
         "-ffreestanding", "-nostdlib",
         "-fno-stack-protector",
+        *cxx_flags,
         "-c",
         *include_flags,
         *sources,
@@ -135,7 +143,7 @@ def build(project_dir: Path) -> Path:
     linker = project_dir / build_cfg["linker"]
     kernel_elf = build_dir / "kernel.elf"
     _run([
-        zig, "cc",
+        zig, zig_frontend,
         "-target", "x86-freestanding-none",
         "-nostdlib",
         "-fuse-ld=lld",
