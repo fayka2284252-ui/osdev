@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Import check
+        run: python -c "import osdev, osdev.cli, osdev.build, osdev.detect, osdev.doctor, osdev.errors, osdev.paths, osdev.setup"
+
+      - name: CLI help
+        run: osdev --help
+
+      - name: Doctor (не должен падать)
+        run: osdev doctor
+        continue-on-error: true

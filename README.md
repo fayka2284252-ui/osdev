@@ -1,5 +1,9 @@
-# osdev
+![CI](https://github.com/fayka2284252-ui/osdev/actions/workflows/ci.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)
+![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6.svg)
 
+# osdev
 **Инструмент для разработки операционных систем на Windows — без WSL, без MSYS2, без кросс-компилятора.**
 
 Одна команда — и у тебя есть весь тулчейн: компилятор C/C++ для bare-metal,
