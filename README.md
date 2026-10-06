@@ -46,13 +46,6 @@ cd myos
 osdev run
 
 
-### Шаг 2. Коммит и push
-
-```cmd
-cd /d C:\dev\osdev
-git add .
-git commit -m "Rename PyPI package to python-osdev, update README with PyPI badges"
-git push
 
 В окне QEMU появится:
 
