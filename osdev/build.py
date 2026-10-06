@@ -1,7 +1,10 @@
 from __future__ import annotations
 import shutil
 import subprocess
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 from pathlib import Path
 
 from rich.console import Console
