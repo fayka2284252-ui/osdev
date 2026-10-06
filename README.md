@@ -1,7 +1,11 @@
 ![CI](https://github.com/fayka2284252-ui/osdev/actions/workflows/ci.yml/badge.svg)
+[![PyPI](https://img.shields.io/pypi/v/python-osdev.svg)](https://pypi.org/project/python-osdev/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/python-osdev.svg)](https://pypi.org/project/python-osdev/)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6.svg)
+
+# osdev
 
 # osdev
 **Инструмент для разработки операционных систем на Windows — без WSL, без MSYS2, без кросс-компилятора.**
@@ -25,6 +29,9 @@
 ## Быстрый старт
 
 ```cmd
+:: 0. установить инструмент
+pip install python-osdev
+
 :: 1. поставить тулчейн (один раз)
 osdev setup
 
@@ -37,7 +44,15 @@ cd myos
 
 :: 4. собрать и запустить
 osdev run
-```
+
+
+### Шаг 2. Коммит и push
+
+```cmd
+cd /d C:\dev\osdev
+git add .
+git commit -m "Rename PyPI package to python-osdev, update README with PyPI badges"
+git push
 
 В окне QEMU появится:
 

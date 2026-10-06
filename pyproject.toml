@@ -1,12 +1,37 @@
 [project]
-name = "osdev"
-version = "0.0.1"
-description = "OSDev toolkit for Windows without WSL"
+name = "python-osdev"
+version = "0.1.0"
+description = "OSDev toolkit for Windows: one command — full bare-metal toolchain (Zig, NASM, QEMU, GDB) and a working i686 kernel. No WSL, no pain."
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "fayka2284252-ui" },
+]
+keywords = ["osdev", "operating-system", "kernel", "windows", "qemu", "nasm", "zig", "bare-metal"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Operating System Kernels",
+]
 dependencies = [
     "typer>=0.12",
     "rich>=13.7",
 ]
+
+[project.urls]
+Homepage = "https://github.com/fayka2284252-ui/osdev"
+Repository = "https://github.com/fayka2284252-ui/osdev"
+Issues = "https://github.com/fayka2284252-ui/osdev/issues"
+Changelog = "https://github.com/fayka2284252-ui/osdev/blob/main/CHANGELOG.md"
 
 [project.scripts]
 osdev = "osdev.cli:app"
