@@ -1,0 +1,22 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Сборка проектов ОС (создаются в C:\dev\myos, но на всякий случай)
+build/
+*.img
+*.o
+*.elf
+*.bin
+
+# Редакторы
+.vscode/
+.idea/
+*.swp
+
+# Windows
+Thumbs.db
+desktop.ini

@@ -1,0 +1,12 @@
+[project]
+name = "{{name}}"
+arch = "i686"
+lang = "c"
+boot = "mbr"
+
+[build]
+asm = ["src/boot.asm"]
+sources = ["src/kernel.c"]
+include = ["src"]
+linker = "src/linker.ld"
+output = "build/{{name}}.img"
