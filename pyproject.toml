@@ -1,6 +1,6 @@
 [project]
 name = "python-osdev"
-version = "0.1.1"
+version = "0.3.1"
 description = "OSDev toolkit for Windows: one command — full bare-metal toolchain (Zig, NASM, QEMU, GDB) and a working i686 kernel. No WSL, no pain."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,6 +43,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["osdev"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"osdev/templates" = "osdev/templates"

@@ -4,6 +4,16 @@ import shutil
 from pathlib import Path
 import os
 import tempfile
+import sys
+
+# Принудительный UTF-8: на Windows CI консоль в cp1252 и падает на русских буквах
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 
 import typer
 from rich.console import Console

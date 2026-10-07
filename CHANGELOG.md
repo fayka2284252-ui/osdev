@@ -2,6 +2,14 @@
 
 Все значимые изменения проекта. Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [0.3.1] — 2026-10-07
+
+### Fixed
+- **CI**: `UnicodeEncodeError` на Windows — принудительный UTF-8 в `cli.py`
+  и env `PYTHONUTF8=1` в workflow
+- **Publish**: дубль `osdev/templates/...` в wheel — убран лишний
+  `force-include`, `packages` уже включает всё рекурсивно
+
 ## [0.3.0] — 2026-10-07
 
 ### Added
