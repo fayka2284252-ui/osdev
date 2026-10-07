@@ -27,6 +27,7 @@ from rich.console import Console
 from .doctor import run_doctor
 from .setup import install_nasm, install_zig
 from .build import build as build_project, load_config, find_tool
+from .upgrade import run_upgrade
 
 app = typer.Typer(
     help="OSDev toolkit для Windows — без WSL, без боли.",
@@ -55,9 +56,14 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
 @app.command()
-def doctor() -> None:
+def doctor(
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v",
+        help="Показать окружение, пути к тулчейну, editable-статус",
+    ),
+) -> None:
     """Проверить, что установлено в системе."""
-    raise typer.Exit(code=run_doctor())
+    raise typer.Exit(code=run_doctor(verbose=verbose))
 
 
 @app.command()
@@ -248,6 +254,16 @@ def add(
 
     toml_path.write_text(new_text, encoding="utf-8")
     console.print(f"[green]Добавлено в sources:[/green] {rel}")
+
+@app.command()
+def upgrade(
+    check: bool = typer.Option(
+        False, "--check", "-c",
+        help="Только проверить, не обновлять",
+    ),
+) -> None:
+    """Проверить и обновить python-osdev с PyPI."""
+    raise typer.Exit(code=run_upgrade(check_only=check))
 
 if __name__ == "__main__":
     app()
