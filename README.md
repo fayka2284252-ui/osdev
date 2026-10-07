@@ -83,6 +83,35 @@ i686, protected mode, C kernel.
 Больше ничего. Zig, NASM и QEMU `osdev setup` поставит сам.
 GDB нужен только для `osdev debug` (можно взять из mingw-w64).
 
+## VS Code: IntelliSense ругается на `__asm__`
+
+Если открыть файлы ядра в VS Code, расширение **C/C++** (Microsoft)
+может подчёркивать красным:
+
+```
+identifier "__asm__" is undefined
+expected a ";"
+```
+
+**Это не ошибки сборки.** IntelliSense не знает про GNU-расширения
+(`__asm__`, `__attribute__`, `__builtin_*`) и по умолчанию настроен
+под MSVC. Настоящий компилятор — `zig cc` — собирает этот же код
+без проблем.
+
+**Правило:** смотри на вывод `osdev build` в терминале, а не на панель
+Problems в VS Code.
+
+Чтобы убрать подчёркивания, создай в корне проекта `.vscode/settings.json`:
+
+```json
+{
+  "C_Cpp.errorSquiggles": "disabled"
+}
+```
+
+Это отключит подсветку ошибок от IntelliSense, оставив автодополнение
+и подсветку синтаксиса.
+
 ## Что внутри
 
 ```
