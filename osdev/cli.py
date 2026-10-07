@@ -5,6 +5,12 @@ from pathlib import Path
 import os
 import tempfile
 import sys
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
+
+try:
+    __version__ = _pkg_version("python-osdev")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 # Принудительный UTF-8: на Windows CI консоль в cp1252 и падает на русских буквах
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -26,6 +32,23 @@ app = typer.Typer(
     help="OSDev toolkit для Windows — без WSL, без боли.",
     no_args_is_help=True,
 )
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"osdev {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        False, "--version", "-V",
+        callback=_version_callback,
+        is_eager=True,
+        help="Показать версию и выйти",
+    ),
+) -> None:
+    """OSDev toolkit для Windows — без WSL, без боли."""
 console = Console()
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
