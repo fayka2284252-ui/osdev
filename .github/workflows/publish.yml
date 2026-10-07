@@ -15,6 +15,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install build
+      - run: rm -rf dist/ build/ *.egg-info
+        shell: bash
       - run: python -m build
       - uses: actions/upload-artifact@v4
         with:
