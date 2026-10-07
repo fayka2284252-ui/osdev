@@ -23,3 +23,8 @@ desktop.ini
 
 # Сборки пакета
 dist/
+
+# Тестовые проекты (создаются через osdev new, не часть пакета)
+testkern/
+testcpp/
+testprintf/

@@ -29,6 +29,23 @@ def load_config(project_dir: Path) -> dict:
         raise FileNotFoundError(f"osdev.toml не найден в {project_dir}")
     return tomllib.loads(cfg_path.read_text(encoding="utf-8"))
 
+
+def _run(cmd: list[str], cwd: Path) -> None:
+    console.print(f"[dim]$ {' '.join(cmd)}[/dim]")
+    r = subprocess.run(
+        cmd, cwd=cwd,
+        capture_output=True, text=True, errors="replace",
+    )
+    if r.stdout:
+        console.print(r.stdout, end="")
+    if r.stderr:
+        console.print(r.stderr, end="", style="red")
+    if r.returncode != 0:
+        from .errors import print_hints
+        print_hints((r.stdout or "") + "\n" + (r.stderr or ""))
+        raise RuntimeError(f"Команда вернула код {r.returncode}")
+
+
 def elf_to_binary(elf_path: Path) -> bytes:
     """Извлекает загружаемые секции из 32-битного ELF в плоский бинарь."""
     data = elf_path.read_bytes()
@@ -68,22 +85,6 @@ def elf_to_binary(elf_path: Path) -> bytes:
     return bytes(out)
 
 
-def _run(cmd: list[str], cwd: Path) -> None:
-    console.print(f"[dim]$ {' '.join(cmd)}[/dim]")
-    r = subprocess.run(
-        cmd, cwd=cwd,
-        capture_output=True, text=True, errors="replace",
-    )
-    if r.stdout:
-        console.print(r.stdout, end="")
-    if r.stderr:
-        console.print(r.stderr, end="", style="red")
-    if r.returncode != 0:
-        from .errors import print_hints
-        print_hints((r.stdout or "") + "\n" + (r.stderr or ""))
-        raise RuntimeError(f"Команда вернула код {r.returncode}")
-
-
 def build(project_dir: Path) -> Path:
     cfg = load_config(project_dir)
     project_cfg = cfg["project"]
@@ -96,29 +97,68 @@ def build(project_dir: Path) -> Path:
     nasm = find_tool("nasm")
     zig = find_tool("zig")
 
-    # --- 1. bootloader ---
+    # ---- 1. asm файлы ----
     asm_files = build_cfg.get("asm", [])
-    if len(asm_files) != 1:
-        raise RuntimeError("Пока поддерживается ровно один asm-файл (bootloader)")
-    asm_src = project_dir / asm_files[0]
-    boot_bin = build_dir / "boot.bin"
-    _run([nasm, "-f", "bin", str(asm_src), "-o", str(boot_bin)], project_dir)
+    if not asm_files:
+        raise RuntimeError("В [build].asm нет ни одного файла")
 
+    kernel_sectors = int(build_cfg.get("kernel_sectors", 32))
+
+    boot_src = project_dir / asm_files[0]
+    boot_bin = build_dir / "boot.bin"
+    _run([
+        nasm,
+        "-f", "bin",
+        f"-dKERNEL_SECTORS={kernel_sectors}",
+        str(boot_src),
+        "-o", str(boot_bin),
+    ], project_dir)
     size = boot_bin.stat().st_size
     if size != 512:
         raise RuntimeError(f"boot.bin должен быть 512 байт, получилось {size}")
     console.print(f"[green]boot.bin[/green] = 512 байт")
 
-    # --- 2. C -> объектник ---
-    sources = [str(project_dir / s) for s in build_cfg.get("sources", [])]
-    if not sources:
+    # дополнительные asm -> elf32 объектники
+    extra_asm_objs: list[Path] = []
+    for rel in asm_files[1:]:
+        src = project_dir / rel
+        obj = build_dir / f"{src.stem}.o"
+        _run([nasm, "-f", "elf32", str(src), "-o", str(obj)], project_dir)
+        console.print(f"[green]{src.stem}.o[/green] = {obj.stat().st_size} байт")
+        extra_asm_objs.append(obj)
+
+    # ---- 2. C/C++ -> объектник ----
+    sources_cfg = build_cfg.get("sources", [])
+    if not sources_cfg:
         raise RuntimeError("В [build].sources нет ни одного файла")
+
+    # Bug #4: предупреждаем о файлах в src/, не включённых в sources
+    src_dir = project_dir / "src"
+    if src_dir.is_dir():
+        declared = {(project_dir / s).resolve() for s in sources_cfg}
+        for f in sorted(src_dir.iterdir()):
+            if not f.is_file():
+                continue
+            if f.suffix not in (".c", ".cpp", ".S"):
+                continue
+            if f.name == "boot.asm":
+                continue
+            if f.resolve() not in declared:
+                console.print(
+                    f"[yellow]⚠ {f.name} есть в src/, но не указан в \\[build].sources "
+                    f"в osdev.toml — линкер может упасть с undefined symbol.[/yellow]"
+                )
+                console.print(
+                    f"[dim]  Добавь вручную: sources = [..., \"src/{f.name}\"]"
+                    f"\n  Или запусти: osdev add {f.name}[/dim]"
+                )
+
+    sources = [str(project_dir / s) for s in sources_cfg]
 
     include_flags: list[str] = []
     for inc in build_cfg.get("include", []):
         include_flags += ["-I", str(project_dir / inc)]
 
-    kernel_o = build_dir / "kernel.o"
     lang = project_cfg.get("lang", "c")
     zig_frontend = "c++" if lang == "cpp" else "cc"
 
@@ -126,11 +166,15 @@ def build(project_dir: Path) -> Path:
     if lang == "cpp":
         cxx_flags = ["-fno-exceptions", "-fno-rtti", "-std=c++20"]
 
+    kernel_o = build_dir / "kernel.o"
     _run([
         zig, zig_frontend,
         "-target", "x86-freestanding-none",
         "-ffreestanding", "-nostdlib",
         "-fno-stack-protector",
+        "-O2",                              # оптимизация + отключение UBSan
+        "-fno-sanitize=undefined",          # страховка
+        "-fwrapv",                          # знаковое переполнение — циклично, а не UB
         *cxx_flags,
         "-c",
         *include_flags,
@@ -139,7 +183,7 @@ def build(project_dir: Path) -> Path:
     ], project_dir)
     console.print(f"[green]kernel.o[/green] = {kernel_o.stat().st_size} байт")
 
-    # --- 3. линковка в ELF и извлечение плоского бинаря ---
+    # ---- 3. линковка ----
     linker = project_dir / build_cfg["linker"]
     kernel_elf = build_dir / "kernel.elf"
     _run([
@@ -151,6 +195,7 @@ def build(project_dir: Path) -> Path:
         "-Wl,--build-id=none",
         "-Wl,-e,kernel_main",
         str(kernel_o),
+        *[str(o) for o in extra_asm_objs],
         "-o", str(kernel_elf),
     ], project_dir)
     console.print(f"[green]kernel.elf[/green] = {kernel_elf.stat().st_size} байт")
@@ -159,7 +204,7 @@ def build(project_dir: Path) -> Path:
     kernel_bin.write_bytes(elf_to_binary(kernel_elf))
     console.print(f"[green]kernel.bin[/green] = {kernel_bin.stat().st_size} байт")
 
-    # --- 4. склейка в образ ---
+    # ---- 4. образ ----
     img = project_dir / build_cfg.get("output", f"build/{name}.img")
     img.parent.mkdir(parents=True, exist_ok=True)
 

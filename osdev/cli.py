@@ -169,6 +169,53 @@ def debug(
             qemu_proc.terminate()
             console.print("[dim]QEMU остановлен.[/dim]")
 
+@app.command()
+def add(
+    filename: str = typer.Argument(..., help="Имя файла (например, vga.c или src/vga.c)"),
+) -> None:
+    """Добавить файл в [build].sources в osdev.toml."""
+    import re
+
+    project_dir = Path.cwd()
+    toml_path = project_dir / "osdev.toml"
+    if not toml_path.exists():
+        console.print(f"[red]osdev.toml не найден в {project_dir}[/red]")
+        raise typer.Exit(1)
+
+    # нормализуем путь
+    if not filename.startswith("src/"):
+        rel = f"src/{filename}"
+    else:
+        rel = filename
+
+    target = project_dir / rel
+    if not target.exists():
+        console.print(f"[red]Файл не найден:[/red] {target}")
+        raise typer.Exit(1)
+
+    text = toml_path.read_text(encoding="utf-8")
+
+    if rel in text:
+        console.print(f"[yellow]Файл уже в sources:[/yellow] {rel}")
+        return
+
+    # ищем массив sources = [...] и добавляем в него
+    pattern = re.compile(r"(sources\s*=\s*\[)([^\]]*)(\])", re.MULTILINE)
+
+    def repl(m: re.Match) -> str:
+        inner = m.group(2).strip()
+        if inner and not inner.endswith(","):
+            inner += ","
+        return f'{m.group(1)}{inner} "{rel}"{m.group(3)}'
+
+    new_text, n = pattern.subn(repl, text, count=1)
+    if n == 0:
+        console.print("[red]Не нашёл массив sources = [...] в osdev.toml[/red]")
+        raise typer.Exit(1)
+
+    toml_path.write_text(new_text, encoding="utf-8")
+    console.print(f"[green]Добавлено в sources:[/green] {rel}")
+
 if __name__ == "__main__":
     app()
 

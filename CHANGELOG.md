@@ -2,6 +2,25 @@
 
 Все значимые изменения проекта. Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [0.3.0] — 2026-10-07
+
+### Added
+- `osdev add <file.c>` — добавляет файл в `[build].sources` в `osdev.toml`
+- `kernel_sectors` в `osdev.toml` (по умолчанию 32 сектора = 16 КБ)
+- Множественные asm-файлы (asm[0] — MBR, остальные — elf32-объектники)
+- Автопроверка `src/*.c`: build предупреждает о файлах, не включённых в sources
+- Флаги `-O2 -fno-sanitize=undefined -fwrapv` (отключают UBSan и уменьшают ядро вдвое)
+- Раздел README про IntelliSense в VS Code
+
+### Changed
+- Ядро линкуется на `0x10000` (было `0x1000`). Раньше ядро >15 КБ затирало загрузчик.
+- Загрузчик читает через INT 13h AH=42h (LBA), по одному сектору за раз
+
+### Fixed
+- Не инкрементировался `dap_lba` — QEMU висел на "Booting from Hard Disk..."
+- `asm_src is not defined` в build.py
+- Rich некорректно отображал `[build]` в предупреждениях
+
 ## [Unreleased]
 
 ## [0.1.0] — 2026-10-06
