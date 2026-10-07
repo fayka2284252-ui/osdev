@@ -1,17 +1,8 @@
-![CI](https://github.com/fayka2284252-ui/osdev/actions/workflows/ci.yml/badge.svg)
-[![PyPI](https://img.shields.io/pypi/v/python-osdev.svg)](https://pypi.org/project/python-osdev/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/python-osdev.svg)](https://pypi.org/project/python-osdev/)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)
-![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6.svg)
-
 # osdev
 
-# osdev
-**Инструмент для разработки операционных систем на Windows — без WSL, без MSYS2, без кросс-компилятора.**
+Инструмент для разработки операционных систем на Windows — без WSL, без MSYS2, без кросс-компилятора.
 
-Одна команда — и у тебя есть весь тулчейн: компилятор C/C++ для bare-metal,
-ассемблер, линкер, эмулятор и отладчик. Всё нативно под Windows.
+Одна команда — и у тебя есть весь тулчейн: компилятор C/C++ для bare-metal, ассемблер, линкер, эмулятор и отладчик. Всё нативно под Windows.
 
 ## Зачем
 
@@ -23,8 +14,7 @@
 - писать Makefile,
 - ловить странные ошибки путей.
 
-`osdev` убирает всё это. Ты пишешь `kernel.c`, нажимаешь `osdev run` и видишь
-своё ядро в QEMU через 5 секунд.
+`osdev` убирает всё это. Ты пишешь `kernel.c`, нажимаешь `osdev run` и видишь своё ядро в QEMU через 5 секунд.
 
 ## Быстрый старт
 
@@ -44,8 +34,7 @@ cd myos
 
 :: 4. собрать и запустить
 osdev run
-
-
+```
 
 В окне QEMU появится:
 
@@ -61,9 +50,11 @@ i686, protected mode, C kernel.
 | `osdev doctor` | Проверить, что установлено (Zig, NASM, QEMU, GDB) |
 | `osdev setup` | Скачать и распаковать тулчейн в `~/.osdev/tools/` |
 | `osdev new <name>` | Создать новый проект ОС из шаблона |
+| `osdev add <file.c>` | Добавить `.c` в `[build].sources` в `osdev.toml` |
 | `osdev build` | Собрать образ (`build/<name>.img`) |
 | `osdev run` | Собрать и запустить в QEMU |
 | `osdev debug` | Собрать и запустить под GDB (с брейкпоинтом на `kernel_main`) |
+| `osdev --version` | Показать версию пакета |
 
 ### `osdev debug` — что попробовать в GDB
 
@@ -123,10 +114,11 @@ osdev/
 ├── build.py          # сборка ядра: nasm → zig cc → ld.lld → .img
 ├── errors.py         # человеческие подсказки к ошибкам компилятора
 └── templates/
-    └── i686-c-mbr/   # шаблон: свой bootloader + C-ядро
+    ├── i686-c-mbr/   # шаблон: свой bootloader + C-ядро
+    └── i686-cpp-mbr/ # то же на C++
 ```
 
-### Что делает `osdev build`
+## Что делает `osdev build`
 
 1. `nasm -f bin src/boot.asm -o build/boot.bin` — 512-байтный MBR.
 2. `zig cc -target x86-freestanding-none -c src/kernel.c` — объектник.
@@ -147,15 +139,20 @@ osdev/
 ## Roadmap
 
 - [x] CLI + `doctor` + `setup` (NASM, Zig)
-- [x] `new` + `build` + `run` + `debug`
+- [x] `new` + `build` + `run` + `debug` + `add`
 - [x] Шаблон `i686-c-mbr`
+- [x] Шаблон `i686-cpp-mbr`
 - [x] Человеческие подсказки к ошибкам (`errors.py`)
-- [ ] Шаблон `i686-cpp-mbr`
-- [ ] Шаблон `i686-c-printf` (своя мини-реализация printf)
+- [x] Флаг `--version`
+- [ ] Шаблон `i686-c-printf` (своя мини-реализация `printf`)
+- [ ] Multiboot / GRUB (`boot = "multiboot"` в `osdev.toml`)
 - [ ] Шаблон `x86_64-c-mbr` (long mode, page tables)
-- [ ] Обработка прерываний (IDT, PIC, клавиатура)
 - [ ] ARM (`aarch64`)
 - [ ] GUI поверх CLI
+
+> **Про IDT, PIC, PIT и клавиатуру.** python-osdev — это старт, а не
+> конструктор ОС. Мы даём базовый шаблон с загрузчиком и VGA-выводом,
+> а прерывания, таймер и драйверы ты пишешь сам — в этом и есть OSDev.
 
 ## Лицензия
 
