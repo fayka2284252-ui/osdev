@@ -2,6 +2,16 @@
 
 Все значимые изменения проекта. Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [0.3.3] — 2026-10-08
+
+### Added
+- `osdev doctor --verbose` — окружение, пути к тулчейну, editable-статус
+- `osdev upgrade` — проверка и обновление с PyPI (`--check` для проверки без установки)
+
+### Fixed
+- `publish.yml`: очистка `dist/` перед сборкой, чтобы старые артефакты не попадали в upload
+- `dist/` убран из репозитория
+
 ## [Unreleased]
 
 ## [0.3.2] — 2026-10-07
