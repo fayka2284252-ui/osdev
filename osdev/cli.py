@@ -13,6 +13,7 @@ from .doctor import run_doctor
 from .setup import install_nasm, install_zig
 from .build import build as build_project, load_config, find_tool
 from .upgrade import run_upgrade
+from .disasm import disassemble
 
 # Принудительный UTF-8: на Windows CI консоль в cp1252 и падает на русских буквах
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -297,6 +298,21 @@ def upgrade(
 ) -> None:
     """Проверить и обновить python-osdev с PyPI."""
     raise typer.Exit(code=run_upgrade(check_only=check))
+
+
+@app.command()
+def disasm(
+    boot: bool = typer.Option(False, "--boot", help="Дизассемблировать boot.bin (только MBR)"),
+    func: str = typer.Option(None, "--func", help="Только одна функция (objdump)"),
+    out: Path = typer.Option(None, "--out", "-o", help="Путь для .dis файла"),
+) -> None:
+    """Дизассемблировать ядро (или загрузчик) в build/*.dis."""
+    try:
+        result = disassemble(Path.cwd(), boot_only=boot, func=func, out_path=out)
+    except Exception as e:
+        console.print(f"[red]Ошибка:[/red] {e}")
+        raise typer.Exit(1)
+    typer.echo(f"Открой: {result}")
 
 
 if __name__ == "__main__":

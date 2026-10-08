@@ -1,0 +1,18 @@
+[project]
+name = "{{name}}"
+arch = "i686"
+lang = "c"
+boot = "multiboot"
+
+[build]
+# Multiboot: nasm -f elf32, ELF без конвертации
+asm = ["src/boot/multiboot.asm"]
+
+sources = [
+    "src/kernel/kernel.c",
+    "src/drivers/vga.c",
+]
+
+include = ["src"]
+linker = "src/linker.ld"
+output = "build/kernel.elf"
