@@ -2,6 +2,24 @@
 
 Все значимые изменения проекта. Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [Unreleased]
+
+## [0.4.0] — 2026-10-08
+
+### Added
+- Multiboot: `boot = "multiboot"` в `osdev.toml` — сборка `kernel.elf`, запуск через `qemu -kernel`
+- GRUB: `boot = "grub"` — генерация ISO через `grub-mkrescue` (PATH или WSL)
+- Шаблон `i686-c-multiboot` — структура `src/boot/`, `src/kernel/`, `src/drivers/`
+- `osdev disasm` — дизассемблер через objdump (`--func`) или ndisasm (`--boot`)
+- `osdev run` / `osdev debug` понимают три режима загрузки
+- Рекурсивный `-I` — все подпапки `src/` добавляются автоматически
+- Рекурсивный auto-scan `src/**/*.c` для предупреждения о забытых файлах
+
+### Changed
+- `osdev/build.py` разбит на три ветки по `boot` (mbr / multiboot / grub)
+
+## [0.3.3] — 2026-10-08
+
 ## [0.3.3] — 2026-10-08
 
 ### Added

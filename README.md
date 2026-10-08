@@ -154,6 +154,96 @@ osdev/
 > конструктор ОС. Мы даём базовый шаблон с загрузчиком и VGA-выводом,
 > а прерывания, таймер и драйверы ты пишешь сам — в этом и есть OSDev.
 
+## Два режима загрузки
+
+`osdev new` по умолчанию создаёт MBR-проект (`boot = "mbr"`) — свой
+загрузчик, свой `boot.asm`, ядро на `0x10000`. Это учебный путь: ты
+сам пишешь всё, включая загрузчик.
+
+Для проектов, где не хочется возиться с `int 13h` и геометрией диска,
+есть второй режим — Multiboot:
+
+```cmd
+osdev new myos -t i686-c-multiboot
+cd myos
+osdev build        # собирает kernel.elf (ELF, не .img)
+osdev run          # qemu -kernel build/kernel.elf
+
+## Два режима загрузки
+
+`osdev new` по умолчанию создаёт MBR-проект (`boot = "mbr"`) — свой
+загрузчик, свой `boot.asm`, ядро на `0x10000`. Это учебный путь: ты
+сам пишешь всё, включая загрузчик.
+
+Для проектов, где не хочется возиться с `int 13h` и геометрией диска,
+есть второй режим — Multiboot:
+
+```cmd
+osdev new myos -t i686-c-multiboot
+cd myos
+osdev build        # собирает kernel.elf (ELF, не .img)
+osdev run          # qemu -kernel build/kernel.elf
+```
+
+**Почему Multiboot.** QEMU (и любой GRUB) сам читает ELF по заголовку
+`0x1BADB002`, грузит ядро на `0x100000`, обнуляет BSS и передаёт
+указатель на `multiboot_info_t` в `EBX`. Никакого `int 13h`, никакой
+геометрии диска, никаких retry при чтении секторов.
+
+**Что теряется.** Ты больше не пишешь загрузчик сам — это уже готовый
+кусок. Если цель — учебный OSDev с нуля, начни с `i686-c-mbr`.
+
+### Конфиг `osdev.toml`
+
+```toml
+[project]
+name = "myos"
+arch = "i686"
+lang = "c"
+boot = "mbr"          # или "multiboot", или "grub"
+
+[build]
+asm = ["src/boot/multiboot.asm"]
+sources = ["src/kernel/kernel.c", "src/drivers/vga.c"]
+include = ["src"]
+linker = "src/linker.ld"
+```
+
+Режимы:
+- `boot = "mbr"` — nasm `-f bin` + MBR + плоский `.img` 1.44 МБ
+- `boot = "multiboot"` — nasm `-f elf32` + `qemu -kernel`
+- `boot = "grub"` — multiboot + `grub-mkrescue` (нужен WSL или grub-mkrescue в PATH)
+
+## `osdev disasm`
+
+Дизассемблирует ядро (или загрузчик) в `build/*.dis`:
+
+```cmd
+osdev disasm                    # всё ядро (objdump -M intel)
+osdev disasm --func kernel_main # только одна функция
+osdev disasm --boot             # boot.bin, 16-бит (только MBR)
+```
+
+Требует `objdump` в PATH (можно взять из mingw-w64) — или возьмёт
+`ndisasm` из комплекта NASM как запасной вариант.
+
+## Roadmap
+
+- [x] CLI + `doctor` + `setup`
+- [x] `new` + `build` + `run` + `debug` + `add` + `upgrade` + `disasm`
+- [x] Шаблон `i686-c-mbr` (C, свой MBR)
+- [x] Шаблон `i686-cpp-mbr` (C++)
+- [x] Множественные asm-файлы
+- [x] `--version`, `doctor --verbose`
+- [x] Multiboot: `boot = "multiboot"` / `"grub"`, шаблон `i686-c-multiboot`
+- [ ] Шаблон `x86_64-c-mbr` (long mode, page tables)
+- [ ] ARM (`aarch64`)
+- [ ] GUI поверх CLI
+
+> **Про IDT, PIC, PIT и клавиатуру.** python-osdev — это старт, а не
+> конструктор ОС. Мы даём базовый шаблон с загрузчиком и VGA-выводом,
+> а прерывания, таймер и драйверы ты пишешь сам — в этом и есть OSDev.
+
 ## Лицензия
 
 MIT.
