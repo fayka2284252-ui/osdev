@@ -85,86 +85,63 @@ def elf_to_binary(elf_path: Path) -> bytes:
     return bytes(out)
 
 
-def build(project_dir: Path) -> Path:
-    cfg = load_config(project_dir)
-    project_cfg = cfg["project"]
-    build_cfg = cfg["build"]
-    name = project_cfg["name"]
+# ---------- Вспомогательные функции ----------
 
-    build_dir = project_dir / "build"
-    build_dir.mkdir(exist_ok=True)
+def _collect_include_dirs(project_dir: Path, src_dir: Path, cfg_includes: list[str]) -> list[Path]:
+    """Все подпапки src/ + дополнительные include из osdev.toml."""
+    dirs: list[Path] = []
+    if src_dir.is_dir():
+        dirs.append(src_dir)
+        for d in sorted(src_dir.rglob("*")):
+            if d.is_dir():
+                dirs.append(d)
+    for rel in cfg_includes:
+        p = (project_dir / rel).resolve()
+        if p not in dirs:
+            dirs.append(p)
+    return dirs
 
-    nasm = find_tool("nasm")
-    zig = find_tool("zig")
 
-    # ---- 1. asm файлы ----
-    asm_files = build_cfg.get("asm", [])
-    if not asm_files:
-        raise RuntimeError("В [build].asm нет ни одного файла")
+def _scan_unlisted_sources(project_dir: Path, src_dir: Path, sources_cfg: list[str]) -> list[Path]:
+    """Все .c/.cpp/.S под src/, не попавшие в [build].sources."""
+    if not src_dir.is_dir():
+        return []
+    declared = {(project_dir / s).resolve() for s in sources_cfg}
+    unlisted: list[Path] = []
+    for f in sorted(src_dir.rglob("*")):
+        if not f.is_file():
+            continue
+        if f.suffix not in (".c", ".cpp", ".S"):
+            continue
+        if f.resolve() not in declared:
+            unlisted.append(f)
+    return unlisted
 
-    kernel_sectors = int(build_cfg.get("kernel_sectors", 32))
 
-    boot_src = project_dir / asm_files[0]
-    boot_bin = build_dir / "boot.bin"
-    _run([
-        nasm,
-        "-f", "bin",
-        f"-dKERNEL_SECTORS={kernel_sectors}",
-        str(boot_src),
-        "-o", str(boot_bin),
-    ], project_dir)
-    size = boot_bin.stat().st_size
-    if size != 512:
-        raise RuntimeError(f"boot.bin должен быть 512 байт, получилось {size}")
-    console.print(f"[green]boot.bin[/green] = 512 байт")
+def _warn_unlisted(project_dir: Path, src_dir: Path, sources_cfg: list[str]) -> None:
+    for f in _scan_unlisted_sources(project_dir, src_dir, sources_cfg):
+        rel = f.relative_to(project_dir).as_posix()
+        console.print(
+            f"[yellow]⚠ {rel} есть в src/, но не указан в \\[build].sources "
+            f"в osdev.toml — линкер может упасть с undefined symbol.[/yellow]"
+        )
+        console.print(
+            f"[dim]  Добавь вручную: sources = [..., \"{rel}\"]"
+            f"\n  Или запусти: osdev add {rel}[/dim]"
+        )
 
-    # дополнительные asm -> elf32 объектники
-    extra_asm_objs: list[Path] = []
-    for rel in asm_files[1:]:
-        src = project_dir / rel
-        obj = build_dir / f"{src.stem}.o"
-        _run([nasm, "-f", "elf32", str(src), "-o", str(obj)], project_dir)
-        console.print(f"[green]{src.stem}.o[/green] = {obj.stat().st_size} байт")
-        extra_asm_objs.append(obj)
 
-    # ---- 2. C/C++ -> объектник ----
-    sources_cfg = build_cfg.get("sources", [])
+# ---------- Общие шаги сборки ----------
+
+def _compile_c(zig: str, zig_frontend: str, cxx_flags: list[str],
+               project_dir: Path, build_dir: Path,
+               sources_cfg: list[str], include_dirs: list[Path]) -> Path:
     if not sources_cfg:
         raise RuntimeError("В [build].sources нет ни одного файла")
 
-    # Bug #4: предупреждаем о файлах в src/, не включённых в sources
-    src_dir = project_dir / "src"
-    if src_dir.is_dir():
-        declared = {(project_dir / s).resolve() for s in sources_cfg}
-        for f in sorted(src_dir.iterdir()):
-            if not f.is_file():
-                continue
-            if f.suffix not in (".c", ".cpp", ".S"):
-                continue
-            if f.name == "boot.asm":
-                continue
-            if f.resolve() not in declared:
-                console.print(
-                    f"[yellow]⚠ {f.name} есть в src/, но не указан в \\[build].sources "
-                    f"в osdev.toml — линкер может упасть с undefined symbol.[/yellow]"
-                )
-                console.print(
-                    f"[dim]  Добавь вручную: sources = [..., \"src/{f.name}\"]"
-                    f"\n  Или запусти: osdev add {f.name}[/dim]"
-                )
-
-    sources = [str(project_dir / s) for s in sources_cfg]
-
     include_flags: list[str] = []
-    for inc in build_cfg.get("include", []):
-        include_flags += ["-I", str(project_dir / inc)]
-
-    lang = project_cfg.get("lang", "c")
-    zig_frontend = "c++" if lang == "cpp" else "cc"
-
-    cxx_flags: list[str] = []
-    if lang == "cpp":
-        cxx_flags = ["-fno-exceptions", "-fno-rtti", "-std=c++20"]
+    for d in include_dirs:
+        include_flags += ["-I", str(d)]
 
     kernel_o = build_dir / "kernel.o"
     _run([
@@ -172,19 +149,22 @@ def build(project_dir: Path) -> Path:
         "-target", "x86-freestanding-none",
         "-ffreestanding", "-nostdlib",
         "-fno-stack-protector",
-        "-O2",                              # оптимизация + отключение UBSan
-        "-fno-sanitize=undefined",          # страховка
-        "-fwrapv",                          # знаковое переполнение — циклично, а не UB
+        "-O2",
+        "-fno-sanitize=undefined",
+        "-fwrapv",
         *cxx_flags,
         "-c",
         *include_flags,
-        *sources,
+        *[str(project_dir / s) for s in sources_cfg],
         "-o", str(kernel_o),
     ], project_dir)
     console.print(f"[green]kernel.o[/green] = {kernel_o.stat().st_size} байт")
+    return kernel_o
 
-    # ---- 3. линковка ----
-    linker = project_dir / build_cfg["linker"]
+
+def _link_elf(zig: str, zig_frontend: str, project_dir: Path, build_dir: Path,
+              kernel_o: Path, extra_asm_objs: list[Path],
+              linker: Path, entry: str) -> Path:
     kernel_elf = build_dir / "kernel.elf"
     _run([
         zig, zig_frontend,
@@ -193,27 +173,183 @@ def build(project_dir: Path) -> Path:
         "-fuse-ld=lld",
         f"-T{linker}",
         "-Wl,--build-id=none",
-        "-Wl,-e,kernel_main",
+        f"-Wl,-e,{entry}",
         str(kernel_o),
         *[str(o) for o in extra_asm_objs],
         "-o", str(kernel_elf),
     ], project_dir)
     console.print(f"[green]kernel.elf[/green] = {kernel_elf.stat().st_size} байт")
+    return kernel_elf
+
+
+# ---------- Три режима сборки ----------
+
+def _build_mbr(project_dir: Path, build_dir: Path, cfg: dict, name: str,
+               nasm: str, zig: str, zig_frontend: str, cxx_flags: list[str]) -> Path:
+    build_cfg = cfg["build"]
+
+    asm_files = build_cfg.get("asm", [])
+    if not asm_files:
+        raise RuntimeError("В [build].asm нет ни одного файла")
+    kernel_sectors = int(build_cfg.get("kernel_sectors", 32))
+
+    boot_src = project_dir / asm_files[0]
+    boot_bin = build_dir / "boot.bin"
+    _run([
+        nasm, "-f", "bin",
+        f"-dKERNEL_SECTORS={kernel_sectors}",
+        str(boot_src), "-o", str(boot_bin),
+    ], project_dir)
+    if boot_bin.stat().st_size != 512:
+        raise RuntimeError(f"boot.bin должен быть 512 байт, получилось {boot_bin.stat().st_size}")
+    console.print(f"[green]boot.bin[/green] = 512 байт")
+
+    # дополнительные asm как elf32
+    extra_asm_objs: list[Path] = []
+    for rel in asm_files[1:]:
+        src = project_dir / rel
+        obj = build_dir / f"{src.stem}.o"
+        _run([nasm, "-f", "elf32", str(src), "-o", str(obj)], project_dir)
+        console.print(f"[green]{src.stem}.o[/green] = {obj.stat().st_size} байт")
+        extra_asm_objs.append(obj)
+
+    src_dir = project_dir / "src"
+    include_dirs = _collect_include_dirs(project_dir, src_dir, build_cfg.get("include", []))
+    kernel_o = _compile_c(zig, zig_frontend, cxx_flags, project_dir, build_dir,
+                          build_cfg.get("sources", []), include_dirs)
+
+    linker = project_dir / build_cfg["linker"]
+    entry = build_cfg.get("entry", "kernel_main")
+    kernel_elf = _link_elf(zig, zig_frontend, project_dir, build_dir,
+                           kernel_o, extra_asm_objs, linker, entry)
 
     kernel_bin = build_dir / "kernel.bin"
     kernel_bin.write_bytes(elf_to_binary(kernel_elf))
     console.print(f"[green]kernel.bin[/green] = {kernel_bin.stat().st_size} байт")
 
-    # ---- 4. образ ----
     img = project_dir / build_cfg.get("output", f"build/{name}.img")
     img.parent.mkdir(parents=True, exist_ok=True)
-
-    target = 1440 * 1024  # 1.44 MB floppy
+    target = 1440 * 1024
     data = boot_bin.read_bytes() + kernel_bin.read_bytes()
     if len(data) > target:
         raise RuntimeError(f"Образ больше {target} байт: {len(data)}")
     data += b"\x00" * (target - len(data))
     img.write_bytes(data)
-
     console.print(f"[green]Образ[/green] {img} ({img.stat().st_size} байт)")
     return img
+
+
+def _build_elf(project_dir: Path, build_dir: Path, cfg: dict, name: str,
+               nasm: str, zig: str, zig_frontend: str, cxx_flags: list[str],
+               make_iso: bool) -> Path:
+    build_cfg = cfg["build"]
+
+    asm_files = build_cfg.get("asm", [])
+    if not asm_files:
+        raise RuntimeError("В [build].asm нет ни одного файла")
+
+    # Все asm — elf32 (multiboot.asm с заголовком и _start + опционально isr.asm)
+    extra_asm_objs: list[Path] = []
+    for rel in asm_files:
+        src = project_dir / rel
+        obj = build_dir / f"{src.stem}.o"
+        _run([nasm, "-f", "elf32", str(src), "-o", str(obj)], project_dir)
+        console.print(f"[green]{src.stem}.o[/green] = {obj.stat().st_size} байт")
+        extra_asm_objs.append(obj)
+
+    src_dir = project_dir / "src"
+    include_dirs = _collect_include_dirs(project_dir, src_dir, build_cfg.get("include", []))
+    kernel_o = _compile_c(zig, zig_frontend, cxx_flags, project_dir, build_dir,
+                          build_cfg.get("sources", []), include_dirs)
+
+    linker = project_dir / build_cfg["linker"]
+    entry = build_cfg.get("entry", "_start")
+    kernel_elf = _link_elf(zig, zig_frontend, project_dir, build_dir,
+                           kernel_o, extra_asm_objs, linker, entry)
+
+    if not make_iso:
+        return kernel_elf
+
+    iso = _make_iso(project_dir, build_dir, name, kernel_elf)
+    console.print(f"[green]ISO[/green] {iso} ({iso.stat().st_size} байт)")
+    return iso
+
+
+def _make_iso(project_dir: Path, build_dir: Path, name: str, kernel_elf: Path) -> Path:
+    iso_dir = build_dir / "iso"
+    boot_dir = iso_dir / "boot"
+    grub_dir = boot_dir / "grub"
+    grub_dir.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy(kernel_elf, boot_dir / "kernel.elf")
+
+    (grub_dir / "grub.cfg").write_text(
+        "set timeout=0\n"
+        "set default=0\n"
+        "\n"
+        f'menuentry "{name}" {{\n'
+        "    multiboot /boot/kernel.elf\n"
+        "    boot\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    iso = build_dir / f"{name}.iso"
+
+    # 1) grub-mkrescue в PATH
+    grub = shutil.which("grub-mkrescue")
+    if grub:
+        _run([grub, "-o", str(iso), str(iso_dir)], project_dir)
+        return iso
+
+    # 2) через WSL
+    wsl = shutil.which("wsl.exe") or shutil.which("wsl")
+    if wsl:
+        def to_wsl(p: Path) -> str:
+            s = str(p.resolve())
+            if len(s) > 1 and s[1] == ":":
+                return f"/mnt/{s[0].lower()}{s[2:].replace(chr(92), '/')}"
+            return s.replace("\\", "/")
+
+        _run([wsl, "grub-mkrescue", "-o", to_wsl(iso), to_wsl(iso_dir)], project_dir)
+        return iso
+
+    raise RuntimeError(
+        "Не найден grub-mkrescue. Для boot = \"grub\" он нужен в PATH или в WSL. "
+        "Используй boot = \"multiboot\" и QEMU -kernel без GRUB."
+    )
+
+
+# ---------- Точка входа ----------
+
+def build(project_dir: Path) -> Path:
+    cfg = load_config(project_dir)
+    project_cfg = cfg["project"]
+    build_cfg = cfg["build"]
+    name = project_cfg["name"]
+    boot = project_cfg.get("boot", "mbr")
+
+    build_dir = project_dir / "build"
+    build_dir.mkdir(exist_ok=True)
+
+    nasm = find_tool("nasm")
+    zig = find_tool("zig")
+
+    lang = project_cfg.get("lang", "c")
+    zig_frontend = "c++" if lang == "cpp" else "cc"
+    cxx_flags = ["-fno-exceptions", "-fno-rtti", "-std=c++20"] if lang == "cpp" else []
+
+    src_dir = project_dir / "src"
+    _warn_unlisted(project_dir, src_dir, build_cfg.get("sources", []))
+
+    if boot == "mbr":
+        return _build_mbr(project_dir, build_dir, cfg, name,
+                          nasm, zig, zig_frontend, cxx_flags)
+    if boot == "multiboot":
+        return _build_elf(project_dir, build_dir, cfg, name,
+                          nasm, zig, zig_frontend, cxx_flags, make_iso=False)
+    if boot == "grub":
+        return _build_elf(project_dir, build_dir, cfg, name,
+                          nasm, zig, zig_frontend, cxx_flags, make_iso=True)
+
+    raise RuntimeError(f"Неизвестный boot = \"{boot}\". Допустимо: mbr, multiboot, grub.")

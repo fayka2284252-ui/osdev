@@ -1,25 +1,10 @@
 ﻿from __future__ import annotations
-import subprocess
-import shutil
-from pathlib import Path
 import os
-import tempfile
+import subprocess
+import shutil as _shutil
 import sys
-from importlib.metadata import version as _pkg_version, PackageNotFoundError
-
-try:
-    __version__ = _pkg_version("python-osdev")
-except PackageNotFoundError:
-    __version__ = "unknown"
-
-# Принудительный UTF-8: на Windows CI консоль в cp1252 и падает на русских буквах
-if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
-
+import tempfile
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -29,10 +14,30 @@ from .setup import install_nasm, install_zig
 from .build import build as build_project, load_config, find_tool
 from .upgrade import run_upgrade
 
+# Принудительный UTF-8: на Windows CI консоль в cp1252 и падает на русских буквах
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
+
+try:
+    __version__ = _pkg_version("python-osdev")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
+
 app = typer.Typer(
     help="OSDev toolkit для Windows — без WSL, без боли.",
     no_args_is_help=True,
 )
+console = Console()
+
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -50,9 +55,6 @@ def _main(
     ),
 ) -> None:
     """OSDev toolkit для Windows — без WSL, без боли."""
-console = Console()
-
-TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
 @app.command()
@@ -96,7 +98,7 @@ def new(
         typer.echo(f"Папка уже существует: {dst}")
         raise typer.Exit(1)
 
-    shutil.copytree(src, dst)
+    _shutil.copytree(src, dst)
 
     toml_path = dst / "osdev.toml"
     if toml_path.exists():
@@ -111,11 +113,11 @@ def new(
 def build() -> None:
     """Собрать образ ОС (ищет osdev.toml в текущей папке)."""
     try:
-        img = build_project(Path.cwd())
+        out = build_project(Path.cwd())
     except Exception as e:
         console.print(f"[red]Ошибка:[/red] {e}")
         raise typer.Exit(1)
-    typer.echo(f"\nГотово: {img}")
+    typer.echo(f"\nГотово: {out}")
     typer.echo("Запусти: osdev run")
 
 
@@ -124,28 +126,45 @@ def run(
     mem: str = typer.Option("128M", "--mem", "-m", help="Объём RAM"),
     no_build: bool = typer.Option(False, "--no-build", help="Не пересобирать"),
 ) -> None:
-    """Собрать и запустить образ в QEMU."""
+    """Собрать и запустить в QEMU. Учитывает boot = mbr / multiboot / grub."""
     project_dir = Path.cwd()
     cfg = load_config(project_dir)
+    boot = cfg["project"].get("boot", "mbr")
     name = cfg["project"]["name"]
-    output_rel = cfg["build"].get("output", f"build/{name}.img")
-    img = project_dir / output_rel
+    build_cfg = cfg["build"]
 
     if not no_build:
         build_project(project_dir)
 
-    if not img.exists():
-        console.print(f"[red]Образ не найден:[/red] {img}")
+    qemu = find_tool("qemu-system-i386")
+
+    if boot == "mbr":
+        output_rel = build_cfg.get("output", f"build/{name}.img")
+        img = project_dir / output_rel
+        if not img.exists():
+            console.print(f"[red]Образ не найден:[/red] {img}")
+            raise typer.Exit(1)
+        args = [qemu, "-drive", f"format=raw,file={img}", "-m", mem]
+    elif boot == "multiboot":
+        elf = project_dir / "build" / "kernel.elf"
+        if not elf.exists():
+            console.print(f"[red]ELF не найден:[/red] {elf}")
+            raise typer.Exit(1)
+        args = [qemu, "-kernel", str(elf), "-m", mem]
+    elif boot == "grub":
+        iso = project_dir / "build" / f"{name}.iso"
+        if not iso.exists():
+            console.print(f"[red]ISO не найден:[/red] {iso}")
+            raise typer.Exit(1)
+        args = [qemu, "-cdrom", str(iso), "-m", mem]
+    else:
+        console.print(f"[red]Неизвестный boot = \"{boot}\"[/red]")
         raise typer.Exit(1)
 
-    qemu = find_tool("qemu-system-i386")
     console.print(f"[green]QEMU[/green]: {qemu}")
     console.print("[dim]Закрой окно QEMU или нажми Ctrl+C для выхода.[/dim]")
-    subprocess.run([
-        qemu,
-        "-drive", f"format=raw,file={img}",
-        "-m", mem,
-    ])
+    subprocess.run(args)
+
 
 @app.command()
 def debug(
@@ -156,38 +175,52 @@ def debug(
     """Собрать и запустить QEMU под GDB (пошаговая отладка ядра)."""
     project_dir = Path.cwd()
     cfg = load_config(project_dir)
+    boot = cfg["project"].get("boot", "mbr")
     name = cfg["project"]["name"]
-    output_rel = cfg["build"].get("output", f"build/{name}.img")
-    img = project_dir / output_rel
-    kernel_elf = project_dir / "build" / "kernel.elf"
+    build_cfg = cfg["build"]
 
     if not no_build:
         build_project(project_dir)
 
-    if not img.exists():
-        console.print(f"[red]Образ не найден:[/red] {img}")
-        raise typer.Exit(1)
+    qemu = find_tool("qemu-system-i386")
+    gdb = find_tool("gdb")
+
+    kernel_elf = project_dir / "build" / "kernel.elf"
     if not kernel_elf.exists():
         console.print(f"[red]kernel.elf не найден:[/red] {kernel_elf}")
         raise typer.Exit(1)
 
-    qemu = find_tool("qemu-system-i386")
-    gdb = find_tool("gdb")
+    if boot == "mbr":
+        output_rel = build_cfg.get("output", f"build/{name}.img")
+        img = project_dir / output_rel
+        if not img.exists():
+            console.print(f"[red]Образ не найден:[/red] {img}")
+            raise typer.Exit(1)
+        qemu_args = [qemu, "-drive", f"format=raw,file={img}", "-m", mem,
+                     "-S", "-gdb", f"tcp::{port}"]
+    elif boot == "multiboot":
+        qemu_args = [qemu, "-kernel", str(kernel_elf), "-m", mem,
+                     "-S", "-gdb", f"tcp::{port}"]
+    elif boot == "grub":
+        iso = project_dir / "build" / f"{name}.iso"
+        if not iso.exists():
+            console.print(f"[red]ISO не найден:[/red] {iso}")
+            raise typer.Exit(1)
+        qemu_args = [qemu, "-cdrom", str(iso), "-m", mem,
+                     "-S", "-gdb", f"tcp::{port}"]
+    else:
+        console.print(f"[red]Неизвестный boot = \"{boot}\"[/red]")
+        raise typer.Exit(1)
 
     console.print(f"[green]QEMU[/green]: {qemu} (GDB :{port}, пауза)")
-    qemu_proc = subprocess.Popen([
-        qemu,
-        "-drive", f"format=raw,file={img}",
-        "-m", mem,
-        "-S",
-        "-gdb", f"tcp::{port}",
-    ])
+    qemu_proc = subprocess.Popen(qemu_args)
 
-    # пишем команды GDB в файл — надёжнее, чем -ex на Windows
+    entry = "_start" if boot in ("multiboot", "grub") else build_cfg.get("entry", "kernel_main")
+
     cmds = "\n".join([
         f"target remote localhost:{port}",
         f"symbol-file {kernel_elf.as_posix()}",
-        "break kernel_main",
+        f"break {entry}",
         "continue",
     ]) + "\n"
 
@@ -197,7 +230,7 @@ def debug(
 
     try:
         console.print(f"[green]GDB[/green]: {gdb}")
-        console.print("[dim]Команды: c (continue), si (step), b <symbol>, info registers, x/10i $pc, q (quit)[/dim]")
+        console.print("[dim]Команды: c (continue), si (step), info registers, x/10i $pc, q (quit)[/dim]")
         subprocess.run([gdb, "-x", gdb_script, str(kernel_elf)])
     finally:
         try:
@@ -207,6 +240,7 @@ def debug(
         if qemu_proc.poll() is None:
             qemu_proc.terminate()
             console.print("[dim]QEMU остановлен.[/dim]")
+
 
 @app.command()
 def add(
@@ -221,7 +255,6 @@ def add(
         console.print(f"[red]osdev.toml не найден в {project_dir}[/red]")
         raise typer.Exit(1)
 
-    # нормализуем путь
     if not filename.startswith("src/"):
         rel = f"src/{filename}"
     else:
@@ -238,7 +271,6 @@ def add(
         console.print(f"[yellow]Файл уже в sources:[/yellow] {rel}")
         return
 
-    # ищем массив sources = [...] и добавляем в него
     pattern = re.compile(r"(sources\s*=\s*\[)([^\]]*)(\])", re.MULTILINE)
 
     def repl(m: re.Match) -> str:
@@ -255,6 +287,7 @@ def add(
     toml_path.write_text(new_text, encoding="utf-8")
     console.print(f"[green]Добавлено в sources:[/green] {rel}")
 
+
 @app.command()
 def upgrade(
     check: bool = typer.Option(
@@ -265,6 +298,6 @@ def upgrade(
     """Проверить и обновить python-osdev с PyPI."""
     raise typer.Exit(code=run_upgrade(check_only=check))
 
+
 if __name__ == "__main__":
     app()
-
